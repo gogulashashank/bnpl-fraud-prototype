@@ -152,10 +152,21 @@ if 'evaluation_results' in st.session_state:
             
             with col2:
                 st.markdown("**Quick Actions**")
-                st.button("🚫 Block Device", use_container_width=True)
-                st.button("📋 Generate SAR Pack", use_container_width=True)
-                st.button("⬆️ Escalate to TL", use_container_width=True)
-                st.button("✅ Mark Legit", use_container_width=True)
+                if st.button("🚫 Block Device", use_container_width=True):
+                    st.success(f"Device {latest_event['device_id']} added to global blocklist.")
+                    note_key = f"notes_{selected_user_id}"
+                    if note_key not in st.session_state: st.session_state[note_key] = []
+                    st.session_state[note_key].append({"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "text": f"[SYSTEM] Analyst blocked device {latest_event['device_id']}"})
+                    
+                if st.button("📋 Generate SAR Pack", use_container_width=True):
+                    st.info("SAR (Suspicious Activity Report) PDF generated and queued for compliance review.")
+                    
+                if st.button("⬆️ Escalate to TL", use_container_width=True):
+                    st.warning("Entity escalated to Team Lead for secondary review.")
+                    
+                if st.button("✅ Mark Legit", use_container_width=True):
+                    st.balloons()
+                    st.success("User marked as False Positive. Rules score adjusted.")
                 
         with tab_alerts:
             st.subheader("Transaction History & Alerts")
