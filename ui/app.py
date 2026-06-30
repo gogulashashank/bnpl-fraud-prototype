@@ -16,6 +16,35 @@ from engine.decision import score_event
 
 st.set_page_config(page_title="Fraud Investigator Workbench", layout="wide", initial_sidebar_state="expanded")
 
+# Minimalist UI Overrides
+st.markdown("""
+<style>
+    /* Clean up clutter */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    
+    /* Floating Metric Cards */
+    div[data-testid="metric-container"] {
+        background-color: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        padding: 1rem;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        transition: transform 0.2s;
+    }
+    div[data-testid="metric-container"]:hover {
+        transform: translateY(-2px);
+    }
+    
+    /* Adjust top padding */
+    .block-container {
+        padding-top: 2rem !important;
+        padding-bottom: 2rem !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # --- DATA LOADING ---
 transactions_file = os.path.join(base_dir, "transactions.csv")
 users_file = os.path.join(base_dir, "users.csv")
@@ -150,79 +179,50 @@ if 'evaluation_results' in st.session_state:
         c_next.button("Next Case (j) ➡️", use_container_width=True, on_click=next_case)
         
         # --- HEADER BAR ---
-        st.markdown(f"### Entity Profile: `{selected_user_id}`")
+        col_hdr, col_actions = st.columns([4, 1])
+        with col_hdr:
+            tags = "🚨 SYNTHETIC" if "SYNTHETIC" in latest_event['triggered_rules'] else ""
+            kyc_badge = f"🛡️ {user_info['kyc_status']}"
+            st.markdown(f"<h3 style='margin-bottom:0;'>{selected_user_id} &nbsp; <span style='font-size: 0.5em; background: rgba(255,255,255,0.1); padding: 4px 8px; border-radius: 4px; vertical-align: middle;'>{kyc_badge}</span> &nbsp; <span style='font-size: 0.5em; color: #ff4b4b; vertical-align: middle;'>{tags}</span></h3>", unsafe_allow_html=True)
+            
+        with col_actions:
+            with st.popover("⚡ Action Menu", use_container_width=True):
+                if st.button("🚫 Block Device", use_container_width=True):
+                    st.success(f"Device {latest_event['device_id']} blocked.")
+                    note_key = f"notes_{selected_user_id}"
+                    if note_key not in st.session_state: st.session_state[note_key] = []
+                    st.session_state[note_key].append({"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "text": f"[SYSTEM] Analyst blocked device {latest_event['device_id']}"})
+                if st.button("📋 Generate SAR", use_container_width=True):
+                    st.info("SAR PDF generated and queued.")
+                if st.button("⬆️ Escalate", use_container_width=True):
+                    st.warning("Escalated to Team Lead.")
+                if st.button("✅ Mark Legit", use_container_width=True):
+                    st.balloons()
+        
+        st.markdown("<br>", unsafe_allow_html=True)
         
         # Risk Band Logic
         risk_score = latest_event['risk_score']
         if risk_score >= 80:
             band_color = "🔴"
-            band_text = "CRITICAL (DECLINE)"
+            band_text = "CRITICAL"
         elif risk_score >= 40:
             band_color = "🟡"
-            band_text = "ELEVATED (REVIEW)"
+            band_text = "ELEVATED"
         else:
             band_color = "🟢"
-            band_text = "LOW RISK (APPROVE)"
+            band_text = "LOW RISK"
             
-        # FIXED ML SCORE BUG: Don't use delta, it adds an Up Arrow that looks like a '1'
-        c1, c2, c3, c4, c5 = st.columns(5)
+        c1, c2, c3 = st.columns(3)
         c1.metric("Blended Risk Score", f"{risk_score} / 100")
         c2.metric("ML Score (RF)", f"{latest_event['ml_score']} / 100")
         c3.metric("Risk Band", f"{band_color} {band_text}")
-        c4.metric("KYC Status", user_info['kyc_status'])
-        c5.metric("Tags", "🚨 SYNTHETIC" if "SYNTHETIC" in latest_event['triggered_rules'] else "None")
         
         st.markdown("---")
         
-        # --- TABS ---
-        tab_overview, tab_alerts, tab_network, tab_timeline, tab_notes = st.tabs([
-            "📊 Overview", "⚠️ Alerts", "🕸️ Network", "📈 Risk Timeline", "📝 Notes"
-        ])
-        
-        with tab_overview:
-            st.subheader("Entity Metadata")
-            col1, col2 = st.columns([2, 1])
-            with col1:
-                st.write(f"**Name:** {user_info['name']}")
-                st.write(f"**Email:** {user_info['email']}")
-                st.write(f"**Phone:** {user_info['phone']}")
-                st.write(f"**Total Volume:** £{entity_events['amount'].sum():.2f}")
-                st.write(f"**Transaction Count:** {len(entity_events)}")
-                
-                features = latest_event['features']
-                if type(features) == str:
-                    features = json.loads(features)
-                    
-                st.write(f"**Distinct Devices (30d):** {features.get('distinct_devices_30d', 1)}")
-                st.write(f"**Distinct IPs (30d):** {features.get('distinct_ips_30d', 1)}")
-            
-            with col2:
-                st.markdown("**Quick Actions**")
-                if st.button("🚫 Block Device", use_container_width=True):
-                    st.success(f"Device {latest_event['device_id']} added to global blocklist.")
-                    note_key = f"notes_{selected_user_id}"
-                    if note_key not in st.session_state: st.session_state[note_key] = []
-                    st.session_state[note_key].append({"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "text": f"[SYSTEM] Analyst blocked device {latest_event['device_id']}"})
-                    
-                if st.button("📋 Generate SAR Pack", use_container_width=True):
-                    st.info("SAR (Suspicious Activity Report) PDF generated and queued for compliance review.")
-                    
-                if st.button("⬆️ Escalate to TL", use_container_width=True):
-                    st.warning("Entity escalated to Team Lead for secondary review.")
-                    
-                if st.button("✅ Mark Legit", use_container_width=True):
-                    st.balloons()
-                    st.success("User marked as False Positive. Rules score adjusted.")
-                
-        with tab_alerts:
-            st.subheader("Transaction History & Alerts")
-            # Format dataframe for display
-            display_df = entity_events[['timestamp', 'event_id', 'event_type', 'amount', 'decision', 'risk_score', 'triggered_rules', 'interventions']].copy()
-            st.dataframe(display_df, use_container_width=True)
-            
-        with tab_network:
-            st.subheader("Link Analysis Graph")
-            st.markdown("Visualizing shared devices and IP addresses across the network. **Click a User node to pivot the investigation, or an Attribute node to see its usage.**")
+        # Core Focal Point: Network Graph
+        st.subheader("🕸️ Link Analysis Graph")
+        st.markdown("Visualizing shared devices and IP addresses across the network. **Click a User node to pivot the investigation, or an Attribute node to see its usage.**")
             
             # Extract the devices and IPs used by this user
             devices = entity_events['device_id'].unique()
@@ -288,8 +288,28 @@ if 'evaluation_results' in st.session_state:
                     attr_events = results_df[(results_df['device_id'] == clicked_node) | (results_df['ip_address'] == clicked_node)]
                     st.dataframe(attr_events[['timestamp', 'user_id', 'amount', 'decision', 'risk_score', 'event_type']], use_container_width=True)
             
-        with tab_timeline:
-            st.subheader("Risk Score Timeline")
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Secondary Information Expanders
+        with st.expander("📊 Entity Metadata & Features", expanded=False):
+            col1, col2 = st.columns(2)
+            with col1:
+                st.write(f"**Name:** {user_info['name']}")
+                st.write(f"**Email:** {user_info['email']}")
+                st.write(f"**Phone:** {user_info['phone']}")
+            with col2:
+                st.write(f"**Total Volume:** £{entity_events['amount'].sum():.2f}")
+                st.write(f"**Transaction Count:** {len(entity_events)}")
+                features = latest_event['features']
+                if type(features) == str: features = json.loads(features)
+                st.write(f"**Distinct Devices (30d):** {features.get('distinct_devices_30d', 1)}")
+                st.write(f"**Distinct IPs (30d):** {features.get('distinct_ips_30d', 1)}")
+
+        with st.expander("⚠️ Transaction History & Alerts", expanded=False):
+            display_df = entity_events[['timestamp', 'event_id', 'event_type', 'amount', 'decision', 'risk_score', 'triggered_rules', 'interventions']].copy()
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
+            
+        with st.expander("📈 Risk Score Timeline", expanded=False):
             # Prepare data for Altair
             timeline_df = entity_events[['timestamp', 'risk_score', 'amount', 'decision']].copy()
             timeline_df['timestamp'] = pd.to_datetime(timeline_df['timestamp'])
@@ -303,8 +323,7 @@ if 'evaluation_results' in st.session_state:
             
             st.altair_chart(line_chart, use_container_width=True)
 
-        with tab_notes:
-            st.subheader("Analyst Notes")
+        with st.expander("📝 Analyst Notes", expanded=False):
             note_key = f"notes_{selected_user_id}"
             if note_key not in st.session_state:
                 st.session_state[note_key] = []
