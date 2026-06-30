@@ -20,22 +20,63 @@ st.set_page_config(page_title="Fraud Investigator Workbench", layout="wide", ini
 # Minimalist UI Overrides
 st.markdown("""
 <style>
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&display=swap');
+    
+    * {
+        font-family: 'IBM Plex Mono', monospace !important;
+    }
+
     /* Clean up clutter */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* Floating Metric Cards */
+    /* Intel Cards for Metrics */
     div[data-testid="metric-container"] {
-        background-color: rgba(255, 255, 255, 0.05);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        padding: 1rem;
-        border-radius: 8px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        transition: transform 0.2s;
+        background-color: rgba(15, 23, 42, 0.8);
+        border: 1px solid rgba(255, 75, 75, 0.2);
+        border-top: 3px solid #ff4b4b;
+        padding: 1.5rem;
+        border-radius: 4px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.5), inset 0 0 20px rgba(255, 75, 75, 0.05);
+        transition: all 0.3s ease;
     }
     div[data-testid="metric-container"]:hover {
         transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(255, 75, 75, 0.2), inset 0 0 20px rgba(255, 75, 75, 0.1);
+        border-color: rgba(255, 75, 75, 0.5);
+    }
+    
+    /* Gradient Buttons */
+    .stButton > button {
+        background: linear-gradient(135deg, #ff4b4b 0%, #990000 100%) !important;
+        border: 1px solid #ff4b4b !important;
+        color: white !important;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.3) !important;
+        transition: transform 0.1s, box-shadow 0.2s !important;
+        font-weight: 600 !important;
+        letter-spacing: 0.5px !important;
+    }
+    .stButton > button:hover {
+        box-shadow: 0 0 10px rgba(255, 75, 75, 0.5) !important;
+        border-color: #ffaaaa !important;
+        color: white !important;
+    }
+    .stButton > button:active {
+        transform: scale(0.98) !important;
+    }
+    
+    /* Expander styling - Dark cards with red hover */
+    [data-testid="stExpander"] {
+        background-color: #0f172a !important;
+        border: 1px solid #1e293b !important;
+        border-radius: 8px !important;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+        overflow: hidden;
+    }
+    [data-testid="stExpander"]:hover {
+        border-color: #ff4b4b !important;
+        box-shadow: 0 0 8px rgba(255, 75, 75, 0.3) !important;
     }
     
     /* Adjust top padding */
@@ -339,7 +380,7 @@ if 'evaluation_results' in st.session_state:
             
         config = Config(width="100%", height=600, directed=True, physics=True, nodeHighlightBehavior=True, highlightColor="#ffffff",
                         collapsible=False, node={'labelProperty': 'label'}, link={'labelProperty': 'label', 'renderLabel': True},
-                        backgroundColor="#000000")
+                        backgroundColor="#020617")
         
         clicked_node = agraph(nodes=nodes, edges=edges, config=config)
         
@@ -376,7 +417,7 @@ if 'evaluation_results' in st.session_state:
             st.dataframe(display_df, use_container_width=True, hide_index=True)
             
         with st.expander("📈 Case Timeline (Evidence Wall)", expanded=False):
-            st.markdown("<div style='background-color: #000; padding: 25px; border-radius: 10px; border: 1px solid #222; box-shadow: inset 0 0 20px rgba(0,0,0,0.5);'>", unsafe_allow_html=True)
+            st.markdown("<div style='background-color: #020617; padding: 25px; border-radius: 10px; border: 1px solid #1e293b; box-shadow: inset 0 0 20px rgba(0,0,0,0.5);'>", unsafe_allow_html=True)
             for idx, row in entity_events.iterrows():
                 color = "#ff4b4b" if row['decision'] == 'DECLINE' else "#ffa421" if row['decision'] == 'REVIEW' else "#00cc96"
                 st.markdown(f"""
