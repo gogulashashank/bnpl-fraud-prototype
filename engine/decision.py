@@ -42,11 +42,13 @@ def score_event(event):
             "amount": float(event.get("amount", 0.0))
         }])
         ml_prob = ml_model.predict_proba(ml_features)[0][1] # Probability of fraud
-        ml_score = int(ml_prob * 100)
+        ml_score = min(100, max(0, int(ml_prob * 100))) # Explicitly bound to 0-100
         
-    # 5. Make decision based on Blended Score (60% Rules, 40% ML)
+    # 5. Make decision based on Blended Score
+    # Fixed Logic Error: Weighted averages dilute risk. 
+    # Use max() so that if ANY system (Rules or ML) flags high risk, the blended score reflects it.
     if ml_model:
-        final_risk_score = int(0.6 * rules_score + 0.4 * ml_score)
+        final_risk_score = max(rules_score, ml_score)
     else:
         final_risk_score = rules_score
         
