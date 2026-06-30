@@ -97,17 +97,12 @@ if 'evaluation_results' in st.session_state:
         st.success("No alerts found in the queue!")
         st.stop()
         
-    if 'selected_entity_idx' not in st.session_state:
-        st.session_state['selected_entity_idx'] = 0
+    if 'entity_selectbox' not in st.session_state:
+        st.session_state['entity_selectbox'] = alerted_users[0]
         
-    selected_user_id = st.sidebar.selectbox("Select Entity to Investigate", alerted_users, index=st.session_state['selected_entity_idx'])
+    selected_user_id = st.sidebar.selectbox("Select Entity to Investigate", alerted_users, key="entity_selectbox")
     
     if selected_user_id:
-        # Update session state if user manually changes dropdown
-        current_idx = list(alerted_users).index(selected_user_id)
-        if current_idx != st.session_state['selected_entity_idx']:
-            st.session_state['selected_entity_idx'] = current_idx
-            
         # Extract Entity Data
         entity_events = results_df[results_df['user_id'] == selected_user_id].sort_values(by='timestamp')
         latest_event = entity_events.iloc[-1]
@@ -145,13 +140,13 @@ if 'evaluation_results' in st.session_state:
         
         if c_prev.button("⬅️ Prev Case (k)", use_container_width=True):
             if current_idx > 0:
-                st.session_state['selected_entity_idx'] = current_idx - 1
-                st.experimental_rerun()
+                st.session_state['entity_selectbox'] = alerted_users[current_idx - 1]
+                st.rerun()
                 
         if c_next.button("Next Case (j) ➡️", use_container_width=True):
             if current_idx < len(alerted_users) - 1:
-                st.session_state['selected_entity_idx'] = current_idx + 1
-                st.experimental_rerun()
+                st.session_state['entity_selectbox'] = alerted_users[current_idx + 1]
+                st.rerun()
         
         # --- HEADER BAR ---
         st.markdown(f"### Entity Profile: `{selected_user_id}`")
@@ -299,6 +294,6 @@ if 'evaluation_results' in st.session_state:
                         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         "text": new_note
                     })
-                    st.experimental_rerun()
+                    st.rerun()
 else:
     st.info("👈 Run the Batch Evaluation from the sidebar to populate the investigator queue.")
