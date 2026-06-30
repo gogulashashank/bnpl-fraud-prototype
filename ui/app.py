@@ -22,8 +22,8 @@ st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&display=swap');
     
-    * {
-        font-family: 'IBM Plex Mono', monospace !important;
+    html, body, [class*="css"] {
+        font-family: 'IBM Plex Mono', monospace;
     }
 
     /* Clean up clutter */
@@ -36,10 +36,11 @@ st.markdown("""
         background-color: rgba(15, 23, 42, 0.8);
         border: 1px solid rgba(255, 75, 75, 0.2);
         border-top: 3px solid #ff4b4b;
-        padding: 1.5rem;
+        padding: 1rem;
         border-radius: 4px;
         box-shadow: 0 4px 12px rgba(0,0,0,0.5), inset 0 0 20px rgba(255, 75, 75, 0.05);
         transition: all 0.3s ease;
+        margin-bottom: 1rem;
     }
     div[data-testid="metric-container"]:hover {
         transform: translateY(-2px);
@@ -302,8 +303,8 @@ if 'evaluation_results' in st.session_state:
             fig = go.Figure(go.Indicator(
                 mode = "gauge+number",
                 value = risk_score,
-                number = {'font': {'size': 40, 'color': 'white'}},
-                title = {'text': "Blended Risk Score", 'font': {'size': 16, 'color': '#aaa'}},
+                number = {'font': {'size': 36, 'color': 'white'}},
+                title = {'text': "Blended Risk Score", 'font': {'size': 14, 'color': '#aaa'}},
                 gauge = {
                     'axis': {'range': [None, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
                     'bar': {'color': "#ff4b4b" if risk_score >= 80 else "#ffa421" if risk_score >= 40 else "#00cc96"},
@@ -315,7 +316,12 @@ if 'evaluation_results' in st.session_state:
                         {'range': [80, 100], 'color': "rgba(255, 75, 75, 0.15)"}],
                 }
             ))
-            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font={'color': "white"}, height=150, margin=dict(l=10, r=10, t=30, b=10))
+            fig.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)", 
+                font={'color': "white"}, 
+                height=180, 
+                margin=dict(l=15, r=15, t=30, b=10)
+            )
             st.plotly_chart(fig, use_container_width=True)
             
         with col_m1:
