@@ -3,7 +3,12 @@ import pandas as pd
 import requests
 import json
 import os
+import sys
 
+# Ensure the root directory is in sys.path so we can import 'engine'
+base_dir = os.path.dirname(os.path.dirname(__file__))
+if base_dir not in sys.path:
+    sys.path.append(base_dir)
 st.set_page_config(page_title="Fraud Investigator Workbench", layout="wide")
 
 st.title("🛡️ Fintech Fraud Investigator Workbench")
