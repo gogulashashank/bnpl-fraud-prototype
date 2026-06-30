@@ -224,70 +224,70 @@ if 'evaluation_results' in st.session_state:
         st.subheader("🕸️ Link Analysis Graph")
         st.markdown("Visualizing shared devices and IP addresses across the network. **Click a User node to pivot the investigation, or an Attribute node to see its usage.**")
             
-            # Extract the devices and IPs used by this user
-            devices = entity_events['device_id'].unique()
-            ips = entity_events['ip_address'].unique()
-            
-            # Find all users who share these devices or IPs
-            linked_events = results_df[results_df['device_id'].isin(devices) | results_df['ip_address'].isin(ips)]
-            
-            nodes = []
-            edges = []
-            added_nodes = set()
-            
-            # Add users
-            for uid in linked_events['user_id'].unique():
-                if uid not in added_nodes:
-                    user_max_risk = linked_events[linked_events['user_id'] == uid]['risk_score'].max()
-                    user_kyc = users_df[users_df['user_id'] == uid].iloc[0]['kyc_status'] if uid in users_df['user_id'].values else "UNKNOWN"
-                    color = "#ff4b4b" if user_max_risk >= 80 else "#ffa421" if user_max_risk >= 40 else "#00cc96"
-                    
-                    # Highlight anchor node
-                    if uid == selected_user_id:
-                        nodes.append(Node(id=uid, label=f"★ {uid}", size=35, color=color, shape="star", title=f"Risk: {user_max_risk} | KYC: {user_kyc}"))
-                    else:
-                        nodes.append(Node(id=uid, label=uid, size=25, color=color, shape="dot", title=f"Risk: {user_max_risk} | KYC: {user_kyc}"))
-                    added_nodes.add(uid)
-                    
-            # Add devices and ips and calculate edge weights
-            edge_counts = {}
-            for idx, row in linked_events.iterrows():
-                dev_id = row['device_id']
-                ip = row['ip_address']
-                uid = row['user_id']
+        # Extract the devices and IPs used by this user
+        devices = entity_events['device_id'].unique()
+        ips = entity_events['ip_address'].unique()
+        
+        # Find all users who share these devices or IPs
+        linked_events = results_df[results_df['device_id'].isin(devices) | results_df['ip_address'].isin(ips)]
+        
+        nodes = []
+        edges = []
+        added_nodes = set()
+        
+        # Add users
+        for uid in linked_events['user_id'].unique():
+            if uid not in added_nodes:
+                user_max_risk = linked_events[linked_events['user_id'] == uid]['risk_score'].max()
+                user_kyc = users_df[users_df['user_id'] == uid].iloc[0]['kyc_status'] if uid in users_df['user_id'].values else "UNKNOWN"
+                color = "#ff4b4b" if user_max_risk >= 80 else "#ffa421" if user_max_risk >= 40 else "#00cc96"
                 
-                if dev_id not in added_nodes:
-                    nodes.append(Node(id=dev_id, label=dev_id, size=15, color="#5c6bc0", shape="square", title="Device"))
-                    added_nodes.add(dev_id)
-                if ip not in added_nodes:
-                    nodes.append(Node(id=ip, label=ip, size=15, color="#ab47bc", shape="triangle", title="IP Address"))
-                    added_nodes.add(ip)
-                    
-                dev_edge_key = (uid, dev_id)
-                ip_edge_key = (uid, ip)
-                edge_counts[dev_edge_key] = edge_counts.get(dev_edge_key, 0) + 1
-                edge_counts[ip_edge_key] = edge_counts.get(ip_edge_key, 0) + 1
+                # Highlight anchor node
+                if uid == selected_user_id:
+                    nodes.append(Node(id=uid, label=f"★ {uid}", size=35, color=color, shape="star", title=f"Risk: {user_max_risk} | KYC: {user_kyc}"))
+                else:
+                    nodes.append(Node(id=uid, label=uid, size=25, color=color, shape="dot", title=f"Risk: {user_max_risk} | KYC: {user_kyc}"))
+                added_nodes.add(uid)
                 
-            for (src, tgt), count in edge_counts.items():
-                edge_label = f"used {count}x" if count > 1 else ""
-                edges.append(Edge(source=src, target=tgt, label=edge_label, width=min(count, 8)))
+        # Add devices and ips and calculate edge weights
+        edge_counts = {}
+        for idx, row in linked_events.iterrows():
+            dev_id = row['device_id']
+            ip = row['ip_address']
+            uid = row['user_id']
+            
+            if dev_id not in added_nodes:
+                nodes.append(Node(id=dev_id, label=dev_id, size=15, color="#5c6bc0", shape="square", title="Device"))
+                added_nodes.add(dev_id)
+            if ip not in added_nodes:
+                nodes.append(Node(id=ip, label=ip, size=15, color="#ab47bc", shape="triangle", title="IP Address"))
+                added_nodes.add(ip)
                 
-            config = Config(width="100%", height=600, directed=False, physics=True, nodeHighlightBehavior=True, highlightColor="#F7A7A6",
-                            collapsible=False, node={'labelProperty': 'label'}, link={'labelProperty': 'label', 'renderLabel': True})
+            dev_edge_key = (uid, dev_id)
+            ip_edge_key = (uid, ip)
+            edge_counts[dev_edge_key] = edge_counts.get(dev_edge_key, 0) + 1
+            edge_counts[ip_edge_key] = edge_counts.get(ip_edge_key, 0) + 1
             
-            clicked_node = agraph(nodes=nodes, edges=edges, config=config)
+        for (src, tgt), count in edge_counts.items():
+            edge_label = f"used {count}x" if count > 1 else ""
+            edges.append(Edge(source=src, target=tgt, label=edge_label, width=min(count, 8)))
             
-            if clicked_node:
-                # If it's a user and NOT the currently selected user, navigate to them
-                if clicked_node in users_df['user_id'].values and clicked_node != selected_user_id:
-                    st.session_state['entity_selectbox'] = clicked_node
-                    st.rerun()
-                # If it's an attribute (device/ip), show related transactions
-                elif clicked_node != selected_user_id:
-                    st.markdown(f"### Activity for Attribute: `{clicked_node}`")
-                    attr_events = results_df[(results_df['device_id'] == clicked_node) | (results_df['ip_address'] == clicked_node)]
-                    st.dataframe(attr_events[['timestamp', 'user_id', 'amount', 'decision', 'risk_score', 'event_type']], use_container_width=True)
-            
+        config = Config(width="100%", height=600, directed=False, physics=True, nodeHighlightBehavior=True, highlightColor="#F7A7A6",
+                        collapsible=False, node={'labelProperty': 'label'}, link={'labelProperty': 'label', 'renderLabel': True})
+        
+        clicked_node = agraph(nodes=nodes, edges=edges, config=config)
+        
+        if clicked_node:
+            # If it's a user and NOT the currently selected user, navigate to them
+            if clicked_node in users_df['user_id'].values and clicked_node != selected_user_id:
+                st.session_state['entity_selectbox'] = clicked_node
+                st.rerun()
+            # If it's an attribute (device/ip), show related transactions
+            elif clicked_node != selected_user_id:
+                st.markdown(f"### Activity for Attribute: `{clicked_node}`")
+                attr_events = results_df[(results_df['device_id'] == clicked_node) | (results_df['ip_address'] == clicked_node)]
+                st.dataframe(attr_events[['timestamp', 'user_id', 'amount', 'decision', 'risk_score', 'event_type']], use_container_width=True)
+        
         st.markdown("<br>", unsafe_allow_html=True)
         
         # Secondary Information Expanders
