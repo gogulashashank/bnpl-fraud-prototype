@@ -10,3 +10,5 @@ pytest
 requests
 scikit-learn
 joblib
+streamlit-agraph
+altair

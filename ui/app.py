@@ -1,21 +1,22 @@
 import streamlit as st
 import pandas as pd
-import requests
 import json
 import os
 import sys
+import altair as alt
+from streamlit_agraph import agraph, Node, Edge, Config
+from datetime import datetime
 
 # Ensure the root directory is in sys.path so we can import 'engine'
 base_dir = os.path.dirname(os.path.dirname(__file__))
 if base_dir not in sys.path:
     sys.path.append(base_dir)
-st.set_page_config(page_title="Fraud Investigator Workbench", layout="wide")
 
-st.title("🛡️ Fintech Fraud Investigator Workbench")
-st.markdown("Review flagged transactions and BNPL applications.")
+from engine.decision import score_event
 
-# Determine paths
-base_dir = os.path.dirname(os.path.dirname(__file__))
+st.set_page_config(page_title="Fraud Investigator Workbench", layout="wide", initial_sidebar_state="expanded")
+
+# --- DATA LOADING ---
 transactions_file = os.path.join(base_dir, "transactions.csv")
 users_file = os.path.join(base_dir, "users.csv")
 
@@ -23,29 +24,24 @@ if not os.path.exists(transactions_file):
     st.warning("No synthetic data found. Please run the simulator first: `python simulator/generate_data.py`")
     st.stop()
 
-# Load Data
 @st.cache_data
 def load_data():
     events_df = pd.read_csv(transactions_file)
     users_df = pd.read_csv(users_file)
-    # Merge email and KYC for the API request payload
-    events_df = events_df.merge(users_df[['user_id', 'email', 'kyc_status']], on='user_id', how='left')
-    return events_df
+    events_df = events_df.merge(users_df[['user_id', 'email', 'kyc_status', 'phone']], on='user_id', how='left')
+    return events_df, users_df
 
-events_df = load_data()
+events_df, users_df = load_data()
 
-st.sidebar.header("Controls")
-if st.sidebar.button("Run Batch Evaluation"):
-    # Clear feature store and re-evaluate
+# --- BATCH EVALUATION ---
+st.sidebar.header("1. Batch Evaluation")
+if st.sidebar.button("Run Evaluation on Synthetic Data", type="primary"):
     db_path = os.path.join(base_dir, "feature_store.db")
     if os.path.exists(db_path):
         os.remove(db_path)
     
-    # We will simulate calling the engine directly to avoid needing the API server running for this demo
-    from engine.decision import score_event
-    
     results = []
-    progress_bar = st.progress(0)
+    progress_bar = st.sidebar.progress(0)
     for i, row in events_df.iterrows():
         event_dict = row.to_dict()
         event_dict['amount'] = float(event_dict['amount'])
@@ -57,6 +53,8 @@ if st.sidebar.button("Run Batch Evaluation"):
         results.append({
             "event_id": event_dict["event_id"],
             "user_id": event_dict["user_id"],
+            "device_id": event_dict["device_id"],
+            "ip_address": event_dict["ip_address"],
             "timestamp": event_dict["timestamp"],
             "event_type": event_dict["event_type"],
             "amount": event_dict["amount"],
@@ -66,50 +64,170 @@ if st.sidebar.button("Run Batch Evaluation"):
             "ml_score": res.get("ml_score", 0),
             "triggered_rules": ", ".join(res["triggered_rules"]),
             "interventions": ", ".join(res.get("interventions", [])),
-            "features": json.dumps(res["features"])
+            "features": res["features"], # Keep as dict for easier extraction
+            "is_fraud": event_dict.get("is_fraud", 0) # For ground truth visualization
         })
         if i % 10 == 0:
             progress_bar.progress(min((i + 1) / len(events_df), 1.0))
             
     progress_bar.progress(1.0)
     st.session_state['evaluation_results'] = pd.DataFrame(results)
-    st.success("Evaluation complete!")
+    st.sidebar.success("Evaluation complete!")
 
+# --- UI REDESIGN ---
 if 'evaluation_results' in st.session_state:
     results_df = st.session_state['evaluation_results']
     
-    # Metrics
-    total = len(results_df)
-    declined = len(results_df[results_df['decision'] == 'DECLINE'])
-    review = len(results_df[results_df['decision'] == 'REVIEW'])
+    st.sidebar.header("2. Investigator Queue")
     
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Total Events", total)
-    c2.metric("Requires Review", review)
-    c3.metric("Auto Declined", declined)
+    # Get entities that have alerts
+    alerted_users = results_df[results_df['decision'].isin(['REVIEW', 'DECLINE'])]['user_id'].unique()
     
-    st.subheader("Alerts Queue (REVIEW & DECLINE)")
-    alerts_df = results_df[results_df['decision'].isin(['REVIEW', 'DECLINE'])].sort_values(by='timestamp', ascending=False)
-    st.dataframe(alerts_df[['timestamp', 'event_id', 'user_id', 'event_type', 'amount', 'decision', 'risk_score', 'rules_score', 'ml_score', 'interventions']])
-    
-    st.subheader("Deep Dive & Link Analysis")
-    selected_event_id = st.selectbox("Select Event ID to investigate", alerts_df['event_id'].tolist() if not alerts_df.empty else [])
-    
-    if selected_event_id:
-        event_details = alerts_df[alerts_df['event_id'] == selected_event_id].iloc[0]
-        st.write(f"**Triggered Rules:** {event_details['triggered_rules']}")
+    if len(alerted_users) == 0:
+        st.success("No alerts found in the queue!")
+        st.stop()
         
-        if event_details['interventions']:
-            st.warning(f"**Recommended Interventions:** {event_details['interventions']}")
+    selected_user_id = st.sidebar.selectbox("Select Entity to Investigate", alerted_users)
+    
+    if selected_user_id:
+        # Extract Entity Data
+        entity_events = results_df[results_df['user_id'] == selected_user_id].sort_values(by='timestamp')
+        latest_event = entity_events.iloc[-1]
+        user_info = users_df[users_df['user_id'] == selected_user_id].iloc[0]
+        
+        # --- HEADER BAR ---
+        st.markdown(f"### Entity Profile: `{selected_user_id}`")
+        
+        # Risk Band Logic
+        risk_score = latest_event['risk_score']
+        if risk_score >= 80:
+            band_color = "🔴"
+            band_text = "CRITICAL (DECLINE)"
+        elif risk_score >= 40:
+            band_color = "🟡"
+            band_text = "ELEVATED (REVIEW)"
+        else:
+            band_color = "🟢"
+            band_text = "LOW RISK (APPROVE)"
             
-        c4, c5 = st.columns(2)
-        with c4:
-            st.markdown("### Risk Scores")
-            st.write(f"**Blended Final Score:** {event_details['risk_score']}")
-            st.write(f"**Rules Score (Heuristics):** {event_details['rules_score']}")
-            st.write(f"**ML Score (Random Forest):** {event_details['ml_score']}")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Risk Score", f"{risk_score} / 100", delta=f"{latest_event['ml_score']} ML", delta_color="inverse")
+        c2.metric("Risk Band", f"{band_color} {band_text}")
+        c3.metric("KYC Status", user_info['kyc_status'])
+        c4.metric("Tags", "🚨 SYNTHETIC" if "SYNTHETIC" in latest_event['triggered_rules'] else "None")
+        
+        st.markdown("---")
+        
+        # --- TABS ---
+        tab_overview, tab_alerts, tab_network, tab_timeline, tab_notes = st.tabs([
+            "📊 Overview", "⚠️ Alerts", "🕸️ Network", "📈 Risk Timeline", "📝 Notes"
+        ])
+        
+        with tab_overview:
+            st.subheader("Entity Metadata")
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                st.write(f"**Name:** {user_info['name']}")
+                st.write(f"**Email:** {user_info['email']}")
+                st.write(f"**Phone:** {user_info['phone']}")
+                st.write(f"**Total Volume:** £{entity_events['amount'].sum():.2f}")
+                st.write(f"**Transaction Count:** {len(entity_events)}")
+                
+                features = latest_event['features']
+                if type(features) == str:
+                    features = json.loads(features)
+                    
+                st.write(f"**Distinct Devices (30d):** {features.get('distinct_devices_30d', 1)}")
+                st.write(f"**Distinct IPs (30d):** {features.get('distinct_ips_30d', 1)}")
             
-        with c5:
-            st.markdown("### Risk Features at Time of Event")
-            features = json.loads(event_details['features'])
-            st.json(features)
+            with col2:
+                st.markdown("**Quick Actions**")
+                st.button("🚫 Block Device", use_container_width=True)
+                st.button("📋 Generate SAR Pack", use_container_width=True)
+                st.button("⬆️ Escalate to TL", use_container_width=True)
+                st.button("✅ Mark Legit", use_container_width=True)
+                
+        with tab_alerts:
+            st.subheader("Transaction History & Alerts")
+            # Format dataframe for display
+            display_df = entity_events[['timestamp', 'event_id', 'event_type', 'amount', 'decision', 'risk_score', 'triggered_rules', 'interventions']].copy()
+            st.dataframe(display_df, use_container_width=True)
+            
+        with tab_network:
+            st.subheader("Link Analysis Graph")
+            st.markdown("Visualizing shared devices and IP addresses across the network.")
+            
+            # Extract the devices and IPs used by this user
+            devices = entity_events['device_id'].unique()
+            ips = entity_events['ip_address'].unique()
+            
+            # Find all users who share these devices or IPs
+            linked_events = results_df[results_df['device_id'].isin(devices) | results_df['ip_address'].isin(ips)]
+            
+            nodes = []
+            edges = []
+            added_nodes = set()
+            
+            # Add users
+            for uid in linked_events['user_id'].unique():
+                if uid not in added_nodes:
+                    user_max_risk = linked_events[linked_events['user_id'] == uid]['risk_score'].max()
+                    color = "#ff4b4b" if user_max_risk >= 80 else "#ffa421" if user_max_risk >= 40 else "#00cc96"
+                    nodes.append(Node(id=uid, label=uid, size=25, color=color))
+                    added_nodes.add(uid)
+                    
+            # Add devices and ips
+            for idx, row in linked_events.iterrows():
+                dev_id = row['device_id']
+                ip = row['ip_address']
+                uid = row['user_id']
+                
+                if dev_id not in added_nodes:
+                    nodes.append(Node(id=dev_id, label=dev_id, size=15, color="#5c6bc0", shape="square"))
+                    added_nodes.add(dev_id)
+                if ip not in added_nodes:
+                    nodes.append(Node(id=ip, label=ip, size=15, color="#ab47bc", shape="triangle"))
+                    added_nodes.add(ip)
+                    
+                edges.append(Edge(source=uid, target=dev_id, label="used_device"))
+                edges.append(Edge(source=uid, target=ip, label="used_ip"))
+                
+            config = Config(width=800, height=500, directed=False, nodeHighlightBehavior=True, highlightColor="#F7A7A6",
+                            collapsible=False, node={'labelProperty': 'label'}, link={'labelProperty': 'label', 'renderLabel': True})
+            
+            agraph(nodes=nodes, edges=edges, config=config)
+            
+        with tab_timeline:
+            st.subheader("Risk Score Timeline")
+            # Prepare data for Altair
+            timeline_df = entity_events[['timestamp', 'risk_score', 'amount', 'decision']].copy()
+            timeline_df['timestamp'] = pd.to_datetime(timeline_df['timestamp'])
+            
+            line_chart = alt.Chart(timeline_df).mark_line(point=True).encode(
+                x='timestamp:T',
+                y=alt.Y('risk_score:Q', scale=alt.Scale(domain=[0, 100])),
+                color=alt.Color('decision:N', scale=alt.Scale(domain=['APPROVE', 'REVIEW', 'DECLINE'], range=['green', 'orange', 'red'])),
+                tooltip=['timestamp', 'risk_score', 'amount', 'decision']
+            ).properties(height=400, use_container_width=True)
+            
+            st.altair_chart(line_chart, use_container_width=True)
+
+        with tab_notes:
+            st.subheader("Analyst Notes")
+            note_key = f"notes_{selected_user_id}"
+            if note_key not in st.session_state:
+                st.session_state[note_key] = []
+                
+            for note in st.session_state[note_key]:
+                st.info(f"**[{note['timestamp']}] @analyst:** {note['text']}")
+                
+            new_note = st.text_area("Add a new note...")
+            if st.button("Save Note"):
+                if new_note:
+                    st.session_state[note_key].append({
+                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "text": new_note
+                    })
+                    st.experimental_rerun()
+else:
+    st.info("👈 Run the Batch Evaluation from the sidebar to populate the investigator queue.")
