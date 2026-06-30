@@ -36,9 +36,11 @@ events_df, users_df = load_data()
 # --- BATCH EVALUATION ---
 st.sidebar.header("1. Batch Evaluation")
 if st.sidebar.button("Run Evaluation on Synthetic Data", type="primary"):
-    db_path = os.path.join(base_dir, "feature_store.db")
-    if os.path.exists(db_path):
-        os.remove(db_path)
+    # Clear feature store properly without breaking open file descriptors
+    from engine.decision import store
+    store.cursor.execute("DELETE FROM events")
+    store.cursor.execute("DELETE FROM users")
+    store.conn.commit()
     
     results = []
     progress_bar = st.sidebar.progress(0)
