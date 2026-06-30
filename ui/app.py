@@ -136,17 +136,18 @@ if 'evaluation_results' in st.session_state:
 
         # Handle Queue Navigation
         current_idx = list(alerted_users).index(selected_user_id)
-        c_prev, c_next = st.sidebar.columns(2)
         
-        if c_prev.button("⬅️ Prev Case (k)", use_container_width=True):
+        def prev_case():
             if current_idx > 0:
                 st.session_state['entity_selectbox'] = alerted_users[current_idx - 1]
-                st.rerun()
                 
-        if c_next.button("Next Case (j) ➡️", use_container_width=True):
+        def next_case():
             if current_idx < len(alerted_users) - 1:
                 st.session_state['entity_selectbox'] = alerted_users[current_idx + 1]
-                st.rerun()
+                
+        c_prev, c_next = st.sidebar.columns(2)
+        c_prev.button("⬅️ Prev Case (k)", use_container_width=True, on_click=prev_case)
+        c_next.button("Next Case (j) ➡️", use_container_width=True, on_click=next_case)
         
         # --- HEADER BAR ---
         st.markdown(f"### Entity Profile: `{selected_user_id}`")
