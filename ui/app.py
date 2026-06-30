@@ -218,7 +218,7 @@ if 'evaluation_results' in st.session_state:
                 y=alt.Y('risk_score:Q', scale=alt.Scale(domain=[0, 100])),
                 color=alt.Color('decision:N', scale=alt.Scale(domain=['APPROVE', 'REVIEW', 'DECLINE'], range=['green', 'orange', 'red'])),
                 tooltip=['timestamp', 'risk_score', 'amount', 'decision']
-            ).properties(height=400, use_container_width=True)
+            ).properties(height=400)
             
             st.altair_chart(line_chart, use_container_width=True)
 
