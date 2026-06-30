@@ -97,13 +97,61 @@ if 'evaluation_results' in st.session_state:
         st.success("No alerts found in the queue!")
         st.stop()
         
-    selected_user_id = st.sidebar.selectbox("Select Entity to Investigate", alerted_users)
+    if 'selected_entity_idx' not in st.session_state:
+        st.session_state['selected_entity_idx'] = 0
+        
+    selected_user_id = st.sidebar.selectbox("Select Entity to Investigate", alerted_users, index=st.session_state['selected_entity_idx'])
     
     if selected_user_id:
+        # Update session state if user manually changes dropdown
+        current_idx = list(alerted_users).index(selected_user_id)
+        if current_idx != st.session_state['selected_entity_idx']:
+            st.session_state['selected_entity_idx'] = current_idx
+            
         # Extract Entity Data
         entity_events = results_df[results_df['user_id'] == selected_user_id].sort_values(by='timestamp')
         latest_event = entity_events.iloc[-1]
         user_info = users_df[users_df['user_id'] == selected_user_id].iloc[0]
+        
+        # --- KEYBOARD NAVIGATION (j/k) ---
+        import streamlit.components.v1 as components
+        components.html("""
+            <script>
+            const doc = window.parent.document;
+            if (!doc.getElementById('jk-listener')) {
+                doc.addEventListener('keydown', function(e) {
+                    if (e.target.tagName.toLowerCase() === 'input' || e.target.tagName.toLowerCase() === 'textarea') return;
+                    if (e.key === 'j') {
+                        const btns = Array.from(doc.querySelectorAll('button'));
+                        const nextBtn = btns.find(b => b.innerText.includes('Next Case (j)'));
+                        if (nextBtn) nextBtn.click();
+                    }
+                    if (e.key === 'k') {
+                        const btns = Array.from(doc.querySelectorAll('button'));
+                        const prevBtn = btns.find(b => b.innerText.includes('Prev Case (k)'));
+                        if (prevBtn) prevBtn.click();
+                    }
+                });
+                const marker = doc.createElement('div');
+                marker.id = 'jk-listener';
+                doc.body.appendChild(marker);
+            }
+            </script>
+        """, height=0)
+
+        # Handle Queue Navigation
+        current_idx = list(alerted_users).index(selected_user_id)
+        c_prev, c_next = st.sidebar.columns(2)
+        
+        if c_prev.button("⬅️ Prev Case (k)", use_container_width=True):
+            if current_idx > 0:
+                st.session_state['selected_entity_idx'] = current_idx - 1
+                st.experimental_rerun()
+                
+        if c_next.button("Next Case (j) ➡️", use_container_width=True):
+            if current_idx < len(alerted_users) - 1:
+                st.session_state['selected_entity_idx'] = current_idx + 1
+                st.experimental_rerun()
         
         # --- HEADER BAR ---
         st.markdown(f"### Entity Profile: `{selected_user_id}`")
@@ -120,11 +168,13 @@ if 'evaluation_results' in st.session_state:
             band_color = "🟢"
             band_text = "LOW RISK (APPROVE)"
             
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Risk Score", f"{risk_score} / 100", delta=f"{latest_event['ml_score']} ML", delta_color="inverse")
-        c2.metric("Risk Band", f"{band_color} {band_text}")
-        c3.metric("KYC Status", user_info['kyc_status'])
-        c4.metric("Tags", "🚨 SYNTHETIC" if "SYNTHETIC" in latest_event['triggered_rules'] else "None")
+        # FIXED ML SCORE BUG: Don't use delta, it adds an Up Arrow that looks like a '1'
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Blended Risk Score", f"{risk_score} / 100")
+        c2.metric("ML Score (RF)", f"{latest_event['ml_score']} / 100")
+        c3.metric("Risk Band", f"{band_color} {band_text}")
+        c4.metric("KYC Status", user_info['kyc_status'])
+        c5.metric("Tags", "🚨 SYNTHETIC" if "SYNTHETIC" in latest_event['triggered_rules'] else "None")
         
         st.markdown("---")
         
