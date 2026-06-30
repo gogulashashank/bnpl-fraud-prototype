@@ -6,6 +6,7 @@ import sys
 import altair as alt
 from streamlit_agraph import agraph, Node, Edge, Config
 from datetime import datetime
+import plotly.graph_objects as go
 
 # Ensure the root directory is in sys.path so we can import 'engine'
 base_dir = os.path.dirname(os.path.dirname(__file__))
@@ -41,6 +42,43 @@ st.markdown("""
     .block-container {
         padding-top: 2rem !important;
         padding-bottom: 2rem !important;
+    }
+    
+    /* Live Pulse Animation for Critical Entities */
+    @keyframes pulse-red {
+        0% { box-shadow: 0 0 0 0 rgba(255, 75, 75, 0.7); border: 1px solid rgba(255, 75, 75, 1); }
+        70% { box-shadow: 0 0 0 10px rgba(255, 75, 75, 0); border: 1px solid rgba(255, 75, 75, 0.3); }
+        100% { box-shadow: 0 0 0 0 rgba(255, 75, 75, 0); border: 1px solid rgba(255, 75, 75, 1); }
+    }
+    
+    .critical-pulse {
+        animation: pulse-red 2s infinite;
+        background-color: rgba(255, 75, 75, 0.05);
+        padding: 10px;
+        border-radius: 8px;
+    }
+    
+    /* Evidence Wall Timeline CSS */
+    .timeline-event {
+        border-left: 2px solid #ff4b4b;
+        padding-left: 15px;
+        margin-bottom: 20px;
+        position: relative;
+    }
+    .timeline-event::before {
+        content: '';
+        position: absolute;
+        left: -6px;
+        top: 0;
+        width: 10px;
+        height: 10px;
+        background-color: inherit;
+        border-radius: 50%;
+    }
+    .timeline-date {
+        font-size: 0.8rem;
+        color: #888;
+        margin-bottom: 4px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -178,12 +216,27 @@ if 'evaluation_results' in st.session_state:
         c_prev.button("⬅️ Prev Case (k)", use_container_width=True, on_click=prev_case)
         c_next.button("Next Case (j) ➡️", use_container_width=True, on_click=next_case)
         
+        # Risk Band Logic
+        risk_score = latest_event['risk_score']
+        if risk_score >= 80:
+            band_color = "🔴"
+            band_text = "CRITICAL"
+            pulse_class = "critical-pulse"
+        elif risk_score >= 40:
+            band_color = "🟡"
+            band_text = "ELEVATED"
+            pulse_class = ""
+        else:
+            band_color = "🟢"
+            band_text = "LOW RISK"
+            pulse_class = ""
+
         # --- HEADER BAR ---
         col_hdr, col_actions = st.columns([4, 1])
         with col_hdr:
             tags = "🚨 SYNTHETIC" if "SYNTHETIC" in latest_event['triggered_rules'] else ""
             kyc_badge = f"🛡️ {user_info['kyc_status']}"
-            st.markdown(f"<h3 style='margin-bottom:0;'>{selected_user_id} &nbsp; <span style='font-size: 0.5em; background: rgba(255,255,255,0.1); padding: 4px 8px; border-radius: 4px; vertical-align: middle;'>{kyc_badge}</span> &nbsp; <span style='font-size: 0.5em; color: #ff4b4b; vertical-align: middle;'>{tags}</span></h3>", unsafe_allow_html=True)
+            st.markdown(f"<div class='{pulse_class}'><h3 style='margin-bottom:0;'>{selected_user_id} &nbsp; <span style='font-size: 0.5em; background: rgba(255,255,255,0.1); padding: 4px 8px; border-radius: 4px; vertical-align: middle;'>{kyc_badge}</span> &nbsp; <span style='font-size: 0.5em; color: #ff4b4b; vertical-align: middle;'>{tags}</span></h3></div>", unsafe_allow_html=True)
             
         with col_actions:
             with st.popover("⚡ Action Menu", use_container_width=True):
@@ -200,23 +253,34 @@ if 'evaluation_results' in st.session_state:
                     st.balloons()
         
         st.markdown("<br>", unsafe_allow_html=True)
-        
-        # Risk Band Logic
-        risk_score = latest_event['risk_score']
-        if risk_score >= 80:
-            band_color = "🔴"
-            band_text = "CRITICAL"
-        elif risk_score >= 40:
-            band_color = "🟡"
-            band_text = "ELEVATED"
-        else:
-            band_color = "🟢"
-            band_text = "LOW RISK"
             
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Blended Risk Score", f"{risk_score} / 100")
-        c2.metric("ML Score (RF)", f"{latest_event['ml_score']} / 100")
-        c3.metric("Risk Band", f"{band_color} {band_text}")
+        # Animated Plotly Gauge and secondary metrics
+        col_gauge, col_m1, col_m2 = st.columns([2, 1, 1])
+        
+        with col_gauge:
+            fig = go.Figure(go.Indicator(
+                mode = "gauge+number",
+                value = risk_score,
+                number = {'font': {'size': 40, 'color': 'white'}},
+                title = {'text': "Blended Risk Score", 'font': {'size': 16, 'color': '#aaa'}},
+                gauge = {
+                    'axis': {'range': [None, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
+                    'bar': {'color': "#ff4b4b" if risk_score >= 80 else "#ffa421" if risk_score >= 40 else "#00cc96"},
+                    'bgcolor': "rgba(0,0,0,0)",
+                    'borderwidth': 0,
+                    'steps': [
+                        {'range': [0, 40], 'color': "rgba(0, 204, 150, 0.15)"},
+                        {'range': [40, 80], 'color': "rgba(255, 164, 33, 0.15)"},
+                        {'range': [80, 100], 'color': "rgba(255, 75, 75, 0.15)"}],
+                }
+            ))
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font={'color': "white"}, height=150, margin=dict(l=10, r=10, t=30, b=10))
+            st.plotly_chart(fig, use_container_width=True)
+            
+        with col_m1:
+            st.metric("ML Score (RF)", f"{latest_event['ml_score']} / 100")
+        with col_m2:
+            st.metric("Risk Band", f"{band_color} {band_text}")
         
         st.markdown("---")
         
@@ -240,11 +304,11 @@ if 'evaluation_results' in st.session_state:
             if uid not in added_nodes:
                 user_max_risk = linked_events[linked_events['user_id'] == uid]['risk_score'].max()
                 user_kyc = users_df[users_df['user_id'] == uid].iloc[0]['kyc_status'] if uid in users_df['user_id'].values else "UNKNOWN"
-                color = "#ff4b4b" if user_max_risk >= 80 else "#ffa421" if user_max_risk >= 40 else "#00cc96"
+                color = "#00ffcc" if uid == selected_user_id else "#ff00ff"
                 
                 # Highlight anchor node
                 if uid == selected_user_id:
-                    nodes.append(Node(id=uid, label=f"★ {uid}", size=35, color=color, shape="star", title=f"Risk: {user_max_risk} | KYC: {user_kyc}"))
+                    nodes.append(Node(id=uid, label=f"★ {uid}", size=40, color=color, shape="star", title=f"Risk: {user_max_risk} | KYC: {user_kyc}"))
                 else:
                     nodes.append(Node(id=uid, label=uid, size=25, color=color, shape="dot", title=f"Risk: {user_max_risk} | KYC: {user_kyc}"))
                 added_nodes.add(uid)
@@ -270,10 +334,12 @@ if 'evaluation_results' in st.session_state:
             
         for (src, tgt), count in edge_counts.items():
             edge_label = f"used {count}x" if count > 1 else ""
-            edges.append(Edge(source=src, target=tgt, label=edge_label, width=min(count, 8)))
+            # Dark web glowing edges
+            edges.append(Edge(source=src, target=tgt, label=edge_label, width=min(count, 5), color="#334455"))
             
-        config = Config(width="100%", height=600, directed=False, physics=True, nodeHighlightBehavior=True, highlightColor="#F7A7A6",
-                        collapsible=False, node={'labelProperty': 'label'}, link={'labelProperty': 'label', 'renderLabel': True})
+        config = Config(width="100%", height=600, directed=True, physics=True, nodeHighlightBehavior=True, highlightColor="#ffffff",
+                        collapsible=False, node={'labelProperty': 'label'}, link={'labelProperty': 'label', 'renderLabel': True},
+                        backgroundColor="#000000")
         
         clicked_node = agraph(nodes=nodes, edges=edges, config=config)
         
@@ -309,19 +375,20 @@ if 'evaluation_results' in st.session_state:
             display_df = entity_events[['timestamp', 'event_id', 'event_type', 'amount', 'decision', 'risk_score', 'triggered_rules', 'interventions']].copy()
             st.dataframe(display_df, use_container_width=True, hide_index=True)
             
-        with st.expander("📈 Risk Score Timeline", expanded=False):
-            # Prepare data for Altair
-            timeline_df = entity_events[['timestamp', 'risk_score', 'amount', 'decision']].copy()
-            timeline_df['timestamp'] = pd.to_datetime(timeline_df['timestamp'])
-            
-            line_chart = alt.Chart(timeline_df).mark_line(point=True).encode(
-                x='timestamp:T',
-                y=alt.Y('risk_score:Q', scale=alt.Scale(domain=[0, 100])),
-                color=alt.Color('decision:N', scale=alt.Scale(domain=['APPROVE', 'REVIEW', 'DECLINE'], range=['green', 'orange', 'red'])),
-                tooltip=['timestamp', 'risk_score', 'amount', 'decision']
-            ).properties(height=400)
-            
-            st.altair_chart(line_chart, use_container_width=True)
+        with st.expander("📈 Case Timeline (Evidence Wall)", expanded=False):
+            st.markdown("<div style='background-color: #000; padding: 25px; border-radius: 10px; border: 1px solid #222; box-shadow: inset 0 0 20px rgba(0,0,0,0.5);'>", unsafe_allow_html=True)
+            for idx, row in entity_events.iterrows():
+                color = "#ff4b4b" if row['decision'] == 'DECLINE' else "#ffa421" if row['decision'] == 'REVIEW' else "#00cc96"
+                st.markdown(f"""
+                <div class="timeline-event" style="border-left-color: {color};">
+                    <style>.timeline-event:nth-child({idx+1})::before {{ background-color: {color}; }}</style>
+                    <div class="timeline-date">{row['timestamp']}</div>
+                    <div style="font-weight: 600; color: #fff; font-size: 1.1em; letter-spacing: 0.5px;">{row['event_type']} - £{row['amount']}</div>
+                    <div style="font-size: 0.9em; color: {color}; margin-top: 4px;">[ {row['decision']} ] &nbsp; <span style="color: #888;">Score: {row['risk_score']}</span></div>
+                    <div style="font-size: 0.85em; color: #aaa; margin-top: 4px; font-family: monospace;">Rules: {row['triggered_rules'] or 'None'}</div>
+                </div>
+                """, unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
 
         with st.expander("📝 Analyst Notes", expanded=False):
             note_key = f"notes_{selected_user_id}"
